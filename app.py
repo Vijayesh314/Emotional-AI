@@ -1,166 +1,224 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 import google.generativeai as genai
-import tempfile
 import os
 import logging
 from flask_cors import CORS
 from dotenv import load_dotenv
-import time
+import base64
 import json
+import io
+import ssl
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.ssl_ import create_urllib3_context
+import urllib3
 
+# Disable SSL warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+# Load environment variables
 load_dotenv()
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# Initialize Flask app
 app = Flask(__name__)
 CORS(app)
 
+# Custom HTTP Adapter with SSL settings
+class CustomHTTPAdapter(HTTPAdapter):
+    def init_poolmanager(self, *args, **kwargs):
+        context = create_urllib3_context()
+        kwargs['ssl_context'] = context
+        return super(CustomHTTPAdapter, self).init_poolmanager(*args, **kwargs)
+
 # Configure Gemini API
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel('gemini-2.5-pro')
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    logging.error("GEMINI_API_KEY not found in environment variables")
+else:
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        # Change to gemini-pro model instead of experimental
+        model = genai.GenerativeModel('gemini-pro')
+        logging.info("Gemini API configured successfully with gemini-pro model")
+    except Exception as e:
+        logging.error(f"Failed to configure Gemini API: {e}")
+
+def check_api_status():
+    """Verify Gemini API connectivity"""
+    try:
+        if not GEMINI_API_KEY:
+            logging.error("GEMINI_API_KEY not found")
+            return False
+        
+        # Test API connection with custom session
+        session = requests.Session()
+        session.mount('https://', CustomHTTPAdapter())
+        
+        response = session.get(
+            'https://generativelanguage.googleapis.com/v1beta/models',
+            params={'key': GEMINI_API_KEY},
+            verify=False
+        )
+        
+        if response.status_code == 200:
+            logging.info("Successfully connected to Gemini API")
+            return True
+        elif response.status_code == 403:
+            logging.error("API access denied. Check IP restrictions and API key permissions")
+            return False
+        else:
+            logging.error(f"API test failed with status code: {response.status_code}")
+            return False
+            
+    except Exception as e:
+        logging.error(f"API connectivity test failed: {e}")
+        return False
 
 @app.route('/')
 def home():
+    """Serve the main application page"""
     try:
-        with open('index.html', 'r') as f:
-            return f.read()
+        return send_from_directory('.', 'index.html')
     except Exception as e:
-        logging.error(f"Error reading index.html: {e}")
+        logging.error(f"Error serving index.html: {e}")
         return f"Error loading page: {str(e)}", 500
+    
+@app.route('/style.css')
+def serve_css():
+    """Serve the CSS file"""
+    return send_from_directory('.', 'style.css', mimetype='text/css')
 
-@app.route('/analyze', methods=['POST'])
-def analyze():
-    video = request.files.get('video')
-    audio = request.files.get('audio')
-    text_prompt = request.form.get('text_prompt', '')
+@app.route('/script.js')
+def serve_js():
+    """Serve the JavaScript file"""
+    return send_from_directory('.', 'script.js', mimetype='application/javascript')
 
-    results = {
-        'video_emotions': [],
-        'emotion_timeline': [],
-        'body_language': '',
-        'audio_analysis': {},
-        'audio_feedback': {},
-        'coaching_feedback': '',
-        'strengths': [],
-        'improvement_areas': [],
-        'overall_score': 0,
-        'professional_tips': []
-    }
+@app.route('/api/check-status', methods=['GET'])
+def check_status():
+    """Check if API key is configured and working"""
+    if not GEMINI_API_KEY:
+        return jsonify({
+            "configured": False,
+            "message": "API key not configured"
+        }), 500
+    
+    api_working = check_api_status()
+    return jsonify({
+        "configured": api_working,
+        "message": "System ready" if api_working else "API connection failed"
+    })
 
-    prompt_parts = []
-
-    # Process video
-    if video:
-        logging.info("Processing video...")
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video:
-            video_path = temp_video.name
-            video.save(video_path)
+@app.route('/api/analyze-emotion', methods=['POST'])
+def analyze_emotion():
+    """Analyze emotion from audio data"""
+    try:
+        # Validate request data
+        data = request.json
+        if not data or 'audio' not in data:
+            return jsonify({"error": "No audio data provided"}), 400
+        
+        audio_data = data['audio']
+        
+        # Validate API configuration
+        if not GEMINI_API_KEY:
+            return jsonify({"error": "API key not configured"}), 500
+        
+        # Decode audio data
         try:
-            video_file = genai.upload_file(path=video_path, display_name="presentation_video")
-            while video_file.state.name == "PROCESSING":
-                time.sleep(1)
-                video_file = genai.get_file(video_file.name)
-            if video_file.state.name == "FAILED":
-                raise ValueError("Video file processing failed.")
-            prompt_parts.append(video_file)
-            prompt_parts.append("Analyze this video for emotional expressions, body language, and presentation quality.")
-        except Exception as e:
-            logging.error(f"Video upload error: {e}")
-            results['coaching_feedback'] = f"Video processing failed: {str(e)}"
-        finally:
-            if os.path.exists(video_path):
-                os.remove(video_path)
+            audio_bytes = base64.b64decode(
+                audio_data.split(',')[1] if ',' in audio_data else audio_data
+            )
+        except Exception as decode_error:
+            logging.error(f"Error decoding audio data: {decode_error}")
+            return jsonify({"error": "Invalid audio data format"}), 400
+        
+        # Create analysis prompt
+        prompt = """
+        Analyze the emotional content of this audio recording. Provide a detailed analysis including:
+        1. Primary emotion detected
+        2. Confidence level (0-1)
+        3. Voice features (pitch, pace, energy, clarity)
+        4. Brief analysis of emotional indicators
 
-    # Process audio
-    if audio:
-        logging.info("Processing audio...")
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
-            audio_path = temp_audio.name
-            audio.save(audio_path)
-        try:
-            audio_file = genai.upload_file(path=audio_path, display_name="presentation_audio")
-            while audio_file.state.name == "PROCESSING":
-                time.sleep(1)
-                audio_file = genai.get_file(audio_file.name)
-            if audio_file.state.name == "FAILED":
-                raise ValueError("Audio file processing failed.")
-            prompt_parts.append(audio_file)
-            prompt_parts.append("Analyze this audio for speaking pace, tone variation, confidence level, and vocal clarity.")
-        except Exception as e:
-            logging.error(f"Audio upload error: {e}")
-            results['coaching_feedback'] = f"Audio processing failed: {str(e)}"
-        finally:
-            if os.path.exists(audio_path):
-                os.remove(audio_path)
-
-    # Add user text prompt
-    if text_prompt:
-        prompt_parts.append(f"\nUser's specific question/context: {text_prompt}")
-
-    # Construct JSON output request
-    if prompt_parts:
-        prompt_parts.append("""
-        Please provide a comprehensive analysis in JSON format with these exact keys:
+        Return the results in the following JSON format:
         {
-            "video_emotions": ["list of detected emotions from video"],
-            "emotion_timeline": [{"timestamp": 0.0, "emotion": "emotion_name", "confidence": 0.95}],
-            "body_language": "analysis of posture, gestures, and non-verbal communication",
-            "audio_feedback": {
-                "pitch_analysis": "evaluation of pitch variation and appropriateness",
-                "pace": "speaking pace assessment",
-                "confidence_level": "vocal confidence rating 1-10",
-                "areas_to_improve": ["list of specific audio improvements"]
+            "emotion": "detected_emotion",
+            "confidence": confidence_score,
+            "voice_features": {
+                "pitch": "description",
+                "pace": "description",
+                "energy": "description",
+                "clarity": "description"
             },
-            "coaching_feedback": "personalized coaching advice based on all inputs",
-            "strengths": ["list of presentation strengths"],
-            "improvement_areas": ["specific areas needing work"],
-            "overall_score": 85,
-            "professional_tips": ["actionable tips for improvement"]
+            "analysis": "detailed_analysis"
         }
-        Be constructive, specific, and encouraging in your feedback. Focus on actionable improvements.
-        """)
-
+        """
+        
         try:
-            response = model.generate_content(prompt_parts)
+            # Process audio with custom session
+            audio_file = genai.upload_file(
+                path=io.BytesIO(audio_bytes),
+                mime_type="audio/webm"
+            )
+            
+            # Generate analysis
+            response = model.generate_content([audio_file, prompt])
+            
+        except ssl.SSLError as ssl_error:
+            logging.error(f"SSL Error: {ssl_error}")
+            return jsonify({
+                "error": "SSL Error",
+                "message": "Failed to establish secure connection to API",
+                "details": str(ssl_error)
+            }), 503
+        except Exception as api_error:
+            logging.error(f"Gemini API error: {api_error}")
+            return jsonify({
+                "error": "API Error",
+                "message": "Unable to process audio analysis",
+                "details": str(api_error)
+            }), 503
+            
+        # Parse response
+        try:
             response_text = response.text
-
-            # Clean up response and extract JSON
+            
+            # Extract JSON from response
             if "```json" in response_text:
                 response_text = response_text.split("```json")[1].split("```")[0]
             elif "```" in response_text:
                 response_text = response_text.split("```")[1].split("```")[0]
-
-            gemini_data = json.loads(response_text.strip())
-
-            results.update({
-                'video_emotions': gemini_data.get('video_emotions', []),
-                'emotion_timeline': gemini_data.get('emotion_timeline', []),
-                'body_language': gemini_data.get('body_language', ''),
-                'audio_feedback': gemini_data.get('audio_feedback', {}),
-                'coaching_feedback': gemini_data.get('coaching_feedback', ''),
-                'strengths': gemini_data.get('strengths', []),
-                'improvement_areas': gemini_data.get('improvement_areas', []),
-                'overall_score': gemini_data.get('overall_score', 0),
-                'professional_tips': gemini_data.get('professional_tips', [])
-            })
-
-            # Provide mock audio_analysis if audio exists but no detailed analysis
-            if audio and not results.get('audio_analysis'):
-                results['audio_analysis'] = {
-                    'average_pitch': 150.0,
-                    'intensity': 0.065,
-                    'tempo': 120.0
-                }
-
-            logging.info("Gemini analysis completed successfully")
-
-        except json.JSONDecodeError:
-            logging.error("Failed to parse Gemini JSON output.")
-            results['coaching_feedback'] = response.text
-        except Exception as e:
-            logging.error(f"Gemini API error: {e}")
-            results['coaching_feedback'] = f"Analysis failed: {str(e)}"
-
-    return jsonify(results)
+            
+            result = json.loads(response_text.strip())
+            logging.info(f"Emotion analysis result: {result}")
+            return jsonify(result)
+            
+        except json.JSONDecodeError as json_error:
+            logging.error(f"Error parsing API response: {json_error}")
+            return jsonify({
+                "error": "Parse Error",
+                "message": "Failed to parse API response",
+                "details": str(json_error)
+            }), 500
+        
+    except Exception as e:
+        logging.error(f"Error analyzing emotion: {e}")
+        return jsonify({
+            "error": "Server Error",
+            "message": "An unexpected error occurred",
+            "details": str(e)
+        }), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5001, host='0.0.0.0')
+    # Initial API status check
+    if not check_api_status():
+        logging.warning("Gemini API is not properly configured or enabled")
+    
+    # Start Flask application
+    app.run(debug=True, host='0.0.0.0', port=5000)
