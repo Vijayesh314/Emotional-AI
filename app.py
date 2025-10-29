@@ -6,14 +6,19 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 import base64
 import json
-import tempfile
-import time
+from requests.adapters import HTTPAdapter
+from urllib3.util.ssl_ import create_urllib3_context
+import urllib3
+import io
+from datetime import datetime, timedelta
+from apscheduler.schedulers.background import BackgroundScheduler
 
 # Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Load environment variables
 load_dotenv()
@@ -21,6 +26,21 @@ load_dotenv()
 # Initialize Flask app
 app = Flask(__name__)
 CORS(app)
+# Update CORS configuration
+CORS(app, resources={
+    r"/api/*": {
+        "origins": ["http://localhost:5000"],
+        "methods": ["GET", "POST"],
+        "allow_headers": ["Content-Type"]
+    }
+})
+
+# Custom HTTP Adapter with SSL settings
+class CustomHTTPAdapter(HTTPAdapter):
+    def init_poolmanager(self, *args, **kwargs):
+        context = create_urllib3_context()
+        kwargs['ssl_context'] = context
+        return super(CustomHTTPAdapter, self).init_poolmanager(*args, **kwargs)
 
 # Configure Gemini API
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -28,46 +48,32 @@ if not GEMINI_API_KEY:
     logging.error("GEMINI_API_KEY not found in environment variables")
 else:
     try:
+        # Configure Gemini API with the key
         genai.configure(api_key=GEMINI_API_KEY)
-        # Use Gemini 2.0 Flash for fast audio processing
-        model = genai.GenerativeModel('gemini-2.0-flash')
-        logging.info("Gemini API configured successfully with gemini-2.0-flash model")
+
+        # Create model instance
+        model = genai.GenerativeModel("gemini-2.0-flash")
+        logging.info("Gemini API configured successfully with gemini-2.0-flash")
     except Exception as e:
         logging.error(f"Failed to configure Gemini API: {e}")
 
 # Store active analysis sessions
 active_sessions = {}
+SESSION_TIMEOUT = timedelta(minutes=30)
 
 def check_api_status():
-    """Verify Gemini API connectivity"""
     try:
         if not GEMINI_API_KEY:
             logging.error("GEMINI_API_KEY not found")
             return False
         
-        try:
-            # List available models
-            logging.info("Checking available models...")
-            models = genai.list_models()
-            
-            # Log models that support generateContent and audio
-            audio_models = []
-            for m in models:
-                if 'generateContent' in m.supported_generation_methods:
-                    logging.info(f"Available model: {m.name}")
-                    # Check if model supports audio
-                    if hasattr(m, 'supported_input_types'):
-                        logging.info(f"  - Supported inputs: {m.supported_input_types}")
-                        if 'audio' in str(m.supported_input_types).lower():
-                            audio_models.append(m.name)
-            
-            if audio_models:
-                logging.info(f"Models supporting audio: {audio_models}")
-            
+        # Test API connection
+        test_response = model.generate_content("Test connection")
+        if test_response:
             logging.info("Successfully connected to Gemini API")
             return True
-        except Exception as e:
-            logging.error(f"API test failed: {e}")
+        else:
+            logging.error("Failed to get response from Gemini API")
             return False
             
     except Exception as e:
@@ -76,7 +82,7 @@ def check_api_status():
 
 @app.route('/')
 def home():
-    """Serve the main application page"""
+    # Serve the main application page
     try:
         return send_from_directory('.', 'index.html')
     except Exception as e:
@@ -85,17 +91,17 @@ def home():
     
 @app.route('/style.css')
 def serve_css():
-    """Serve the CSS file"""
+    # Serve the CSS file
     return send_from_directory('.', 'style.css', mimetype='text/css')
 
 @app.route('/script.js')
 def serve_js():
-    """Serve the JavaScript file"""
+    # Serve the JavaScript file
     return send_from_directory('.', 'script.js', mimetype='application/javascript')
 
 @app.route('/api/check-status', methods=['GET'])
 def check_status():
-    """Check if API key is configured and working"""
+    # Check if API key is configured and working
     if not GEMINI_API_KEY:
         return jsonify({
             "configured": False,
@@ -110,9 +116,7 @@ def check_status():
 
 @app.route('/api/analyze-chunk', methods=['POST'])
 def analyze_chunk():
-    """Analyze emotion from audio chunk in real-time"""
-    temp_file_path = None
-    
+    # Analyze emotion from audio chunk in real-time
     try:
         data = request.json
         if not data or 'audio' not in data:
@@ -133,25 +137,6 @@ def analyze_chunk():
             logging.error(f"Error decoding audio data: {decode_error}")
             return jsonify({"error": "Invalid audio data format"}), 400
         
-        # Check minimum audio size (skip very small chunks)
-        if len(audio_bytes) < 1000:
-            logging.info("Audio chunk too small, skipping analysis")
-            return jsonify({
-                "skipped": True,
-                "message": "Audio chunk too small"
-            })
-        
-        # Save audio to temporary file
-        try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.webm') as temp_file:
-                temp_file.write(audio_bytes)
-                temp_file_path = temp_file.name
-            
-            logging.info(f"Audio chunk saved: {temp_file_path} ({len(audio_bytes)} bytes)")
-        except Exception as file_error:
-            logging.error(f"Error saving audio file: {file_error}")
-            return jsonify({"error": "Failed to save audio file"}), 500
-        
         # Create concise prompt for faster response
         prompt = """
         Analyze the emotion in this audio. Be CONCISE and respond ONLY with valid JSON (no markdown):
@@ -169,64 +154,20 @@ def analyze_chunk():
         """
         
         try:
-            # Upload and analyze
-            logging.info(f"Processing chunk for session {session_id}...")
-            
-            # Upload file with retry
-            max_retries = 2
-            audio_file = None
-            
-            for attempt in range(max_retries):
-                try:
-                    audio_file = genai.upload_file(path=temp_file_path, mime_type="audio/webm")
-                    logging.info(f"File uploaded: {audio_file.name}")
-                    break
-                except Exception as upload_error:
-                    if attempt < max_retries - 1:
-                        logging.warning(f"Upload attempt {attempt + 1} failed, retrying...")
-                        time.sleep(0.5)
-                    else:
-                        raise upload_error
-            
-            if not audio_file:
-                raise Exception("Failed to upload audio file")
-            
-            # Wait for file to be ready
-            time.sleep(0.3)
-            
-            # Generate content
-            response = model.generate_content(
-                [audio_file, prompt],
-                generation_config=genai.GenerationConfig(
-                    temperature=0.4,
-                    max_output_tokens=300,
-                )
+            # Upload and analyze with custom session
+            audio_file = genai.upload_file(
+                path=io.BytesIO(audio_bytes),
+                mime_type="audio/webm"
             )
             
-            # Cleanup uploaded file immediately
-            try:
-                genai.delete_file(audio_file.name)
-                logging.info(f"Deleted uploaded file: {audio_file.name}")
-            except Exception as cleanup_error:
-                logging.warning(f"Failed to delete uploaded file: {cleanup_error}")
-            
+            # Generate analysis
+            response = model.generate_content([audio_file, prompt])
         except Exception as api_error:
-            error_msg = str(api_error)
-            logging.error(f"Gemini API error: {error_msg}")
-            
-            # Provide more specific error messages
-            if "400" in error_msg:
-                if "invalid argument" in error_msg.lower():
-                    return jsonify({
-                        "error": "Invalid Request",
-                        "message": "Audio format may be incompatible. Try refreshing the page.",
-                        "details": error_msg
-                    }), 503
-            
+            logging.error(f"Gemini API error: {api_error}")
             return jsonify({
                 "error": "API Error",
                 "message": "Unable to process audio analysis",
-                "details": error_msg
+                "details": str(api_error)
             }), 503
             
         # Parse response
@@ -245,44 +186,42 @@ def analyze_chunk():
             if not all(key in result for key in ['emotion', 'confidence', 'voice_features', 'analysis']):
                 raise ValueError("Invalid response structure")
             
+            # Replace the session storage section in analyze_chunk
             # Store in session (keep last 5 results for smoothing)
             if session_id not in active_sessions:
-                active_sessions[session_id] = []
-            
-            active_sessions[session_id].append(result)
-            if len(active_sessions[session_id]) > 5:
-                active_sessions[session_id].pop(0)
+                active_sessions[session_id] = {
+                    'results': [],
+                    'last_active': datetime.now()
+                }
+            else:
+                active_sessions[session_id]['last_active'] = datetime.now()
+
+            active_sessions[session_id]['results'].append(result)
+            if len(active_sessions[session_id]['results']) > 5:
+                active_sessions[session_id]['results'].pop(0)
             
             logging.info(f"Analysis complete: {result['emotion']} ({result['confidence']:.2f})")
             return jsonify(result)
             
-        except (json.JSONDecodeError, ValueError) as parse_error:
-            logging.error(f"Parse error: {parse_error}")
-            logging.error(f"Response: {response_text}")
+        except json.JSONDecodeError as json_error:
+            logging.error(f"Error parsing API response: {json_error}")
             return jsonify({
                 "error": "Parse Error",
-                "message": "Failed to parse response",
-                "details": str(parse_error)
+                "message": "Failed to parse API response",
+                "details": str(json_error)
             }), 500
         
     except Exception as e:
         logging.error(f"Error analyzing emotion: {e}")
         return jsonify({
             "error": "Server Error",
-            "message": str(e)
+            "message": "An unexpected error occurred",
+            "details": str(e)
         }), 500
-    
-    finally:
-        # Cleanup temporary file
-        if temp_file_path and os.path.exists(temp_file_path):
-            try:
-                os.unlink(temp_file_path)
-            except Exception as cleanup_error:
-                logging.warning(f"Failed to delete temporary file: {cleanup_error}")
 
 @app.route('/api/end-session', methods=['POST'])
 def end_session():
-    """Clean up session data"""
+    # Clean up session data
     try:
         data = request.json
         session_id = data.get('session_id', 'default')
@@ -295,9 +234,28 @@ def end_session():
     except Exception as e:
         logging.error(f"Error ending session: {e}")
         return jsonify({"error": str(e)}), 500
+    
+def cleanup_expired_sessions():
+    # Remove expired sessions
+    current_time = datetime.now()
+    expired = []
+    for session_id, session_data in active_sessions.items():
+        if 'last_active' in session_data and current_time - session_data['last_active'] > SESSION_TIMEOUT:
+            expired.append(session_id)
+    
+    for session_id in expired:
+        del active_sessions[session_id]
+        logging.info(f"Expired session removed: {session_id}")
 
 if __name__ == '__main__':
     if not check_api_status():
         logging.warning("Gemini API is not properly configured or enabled")
     
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Start session cleanup scheduler
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(cleanup_expired_sessions, "interval", minutes=15)
+    scheduler.start()
+    try:
+        app.run(debug=True, host="0.0.0.0", port=5000)
+    finally:
+        scheduler.shutdown()
