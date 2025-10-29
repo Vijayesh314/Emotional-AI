@@ -5,9 +5,16 @@ let analyser
 let dataArray
 let animationId
 let isRecording = false
-let audioChunks = []
 let recordingStartTime
+let sessionId
+let analysisQueue = []
+let isAnalyzing = false
 const emotionHistory = []
+
+// Configuration
+const CHUNK_DURATION = 3000 // Increased to 3 seconds to reduce API load
+const MIN_CHUNK_SIZE = 5000 // Increased minimum size
+const MAX_CONCURRENT_ANALYSIS = 1 // Only process one at a time
 
 // DOM elements
 const startBtn = document.getElementById("startBtn")
@@ -81,10 +88,117 @@ function drawWaveform() {
   canvasCtx.stroke()
 }
 
+// Process audio chunk
+async function processAudioChunk(audioBlob) {
+  // Add to queue
+  analysisQueue.push(audioBlob)
+  
+  // Process queue if not already processing
+  if (!isAnalyzing) {
+    processQueue()
+  }
+}
+
+// Process analysis queue
+async function processQueue() {
+  if (analysisQueue.length === 0) {
+    isAnalyzing = false
+    return
+  }
+  
+  isAnalyzing = true
+  const audioBlob = analysisQueue.shift()
+  
+  // Skip if blob is too small
+  if (audioBlob.size < MIN_CHUNK_SIZE) {
+    console.log(`Skipping small chunk (${audioBlob.size} bytes)`)
+    setTimeout(() => processQueue(), 100)
+    return
+  }
+  
+  try {
+    // Convert blob to base64
+    const reader = new FileReader()
+    
+    reader.onloadend = async () => {
+      try {
+        const base64Audio = reader.result
+        
+        // Show analyzing indicator
+        updateStatusText("Analyzing...")
+        
+        const response = await fetch("/api/analyze-chunk", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ 
+            audio: base64Audio,
+            session_id: sessionId
+          }),
+        })
+
+        if (response.ok) {
+          const result = await response.json()
+          
+          if (!result.skipped) {
+            updateUI(result)
+            updateStatusText(`Recording... (${result.emotion} detected)`)
+          } else {
+            updateStatusText("Recording...")
+          }
+        } else {
+          const errorData = await response.json()
+          console.error("Analysis failed:", errorData)
+          updateStatusText("Recording... (analysis error)")
+          
+          // Clear queue on persistent errors to prevent backup
+          if (analysisQueue.length > 3) {
+            console.warn("Clearing analysis queue due to errors")
+            analysisQueue = []
+          }
+        }
+      } catch (error) {
+        console.error("Error analyzing chunk:", error)
+        updateStatusText("Recording... (error)")
+      } finally {
+        // Wait before processing next to avoid rate limits
+        setTimeout(() => processQueue(), 500)
+      }
+    }
+    
+    reader.readAsDataURL(audioBlob)
+  } catch (error) {
+    console.error("Error processing chunk:", error)
+    setTimeout(() => processQueue(), 500)
+  }
+}
+
+// Update status text
+function updateStatusText(text) {
+  const statusSpan = recordingStatus.querySelector("span:last-child")
+  statusSpan.textContent = text
+  
+  // Add analyzing indicator
+  if (text.includes("Analyzing")) {
+    statusSpan.style.color = "#f6ad55"
+  } else if (text.includes("error")) {
+    statusSpan.style.color = "#fc8181"
+  } else {
+    statusSpan.style.color = ""
+  }
+}
+
 // Start recording
 async function startRecording() {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const stream = await navigator.mediaDevices.getUserMedia({ 
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      } 
+    })
 
     // Setup audio context for visualization
     audioContext = new (window.AudioContext || window.webkitAudioContext)()
@@ -95,22 +209,23 @@ async function startRecording() {
     const bufferLength = analyser.frequencyBinCount
     dataArray = new Uint8Array(bufferLength)
 
-    // Setup media recorder
-    mediaRecorder = new MediaRecorder(stream)
-    audioChunks = []
-
+    // Setup media recorder with time slicing
+    mediaRecorder = new MediaRecorder(stream, {
+      mimeType: 'audio/webm;codecs=opus'
+    })
+    
+    // Generate session ID
+    sessionId = `session_${Date.now()}`
+    
     mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        audioChunks.push(event.data)
+      if (event.data.size > MIN_CHUNK_SIZE) {
+        // Process this chunk
+        processAudioChunk(event.data)
       }
     }
 
-    mediaRecorder.onstop = async () => {
-      const audioBlob = new Blob(audioChunks, { type: "audio/webm" })
-      await analyzeEmotion(audioBlob)
-    }
-
-    mediaRecorder.start()
+    // Start recording with time slicing (get chunks automatically)
+    mediaRecorder.start(CHUNK_DURATION)
     isRecording = true
     recordingStartTime = Date.now()
 
@@ -118,28 +233,14 @@ async function startRecording() {
     startBtn.disabled = true
     stopBtn.disabled = false
     recordingStatus.classList.add("recording")
-    recordingStatus.querySelector("span:last-child").textContent = "Recording..."
+    updateStatusText("Recording... initializing")
     resultsSection.classList.add("active")
 
     // Start visualization
     setupCanvas()
     drawWaveform()
 
-    // Analyze every 3 seconds
-    const analysisInterval = setInterval(() => {
-      if (!isRecording) {
-        clearInterval(analysisInterval)
-        return
-      }
-
-      mediaRecorder.stop()
-      setTimeout(() => {
-        if (isRecording) {
-          mediaRecorder.start()
-          audioChunks = []
-        }
-      }, 100)
-    }, 3000)
+    console.log("Recording started with real-time analysis")
   } catch (error) {
     console.error("Error starting recording:", error)
     alert("Could not access microphone. Please check permissions.")
@@ -147,10 +248,17 @@ async function startRecording() {
 }
 
 // Stop recording
-function stopRecording() {
+async function stopRecording() {
   if (mediaRecorder && isRecording) {
     isRecording = false
+    
+    // Stop media recorder
     mediaRecorder.stop()
+    
+    // Stop all tracks
+    if (mediaRecorder.stream) {
+      mediaRecorder.stream.getTracks().forEach(track => track.stop())
+    }
 
     if (audioContext) {
       audioContext.close()
@@ -160,45 +268,30 @@ function stopRecording() {
       cancelAnimationFrame(animationId)
     }
 
-    // Update UI
-    startBtn.disabled = false
-    stopBtn.disabled = true
-    recordingStatus.classList.remove("recording")
-    recordingStatus.querySelector("span:last-child").textContent = "Recording stopped"
-
-    // Clear canvas
-    canvasCtx.fillStyle = "rgba(26, 32, 44, 0.5)"
-    canvasCtx.fillRect(0, 0, canvas.width, canvas.height)
-  }
-}
-
-// Analyze emotion from audio
-async function analyzeEmotion(audioBlob) {
-  try {
-    // Convert blob to base64
-    const reader = new FileReader()
-    reader.readAsDataURL(audioBlob)
-
-    reader.onloadend = async () => {
-      const base64Audio = reader.result
-
-      const response = await fetch("/api/analyze-emotion", {
+    // End session
+    try {
+      await fetch("/api/end-session", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ audio: base64Audio }),
+        body: JSON.stringify({ session_id: sessionId }),
       })
-
-      if (!response.ok) {
-        throw new Error("Analysis failed")
-      }
-
-      const result = await response.json()
-      updateUI(result)
+    } catch (error) {
+      console.error("Error ending session:", error)
     }
-  } catch (error) {
-    console.error("Error analyzing emotion:", error)
+
+    // Update UI
+    startBtn.disabled = false
+    stopBtn.disabled = true
+    recordingStatus.classList.remove("recording")
+    updateStatusText("Recording stopped")
+
+    // Clear canvas
+    canvasCtx.fillStyle = "rgba(26, 32, 44, 0.5)"
+    canvasCtx.fillRect(0, 0, canvas.width, canvas.height)
+    
+    console.log("Recording stopped")
   }
 }
 
@@ -209,6 +302,23 @@ function updateUI(result) {
   // Update emotion indicator
   const indicator = document.getElementById("emotion-indicator")
   indicator.className = `emotion-indicator ${emotion}`
+  
+  // Update emoji based on emotion
+  const emojiMap = {
+    happy: "😊",
+    sad: "😢",
+    angry: "😠",
+    fearful: "😨",
+    surprised: "😲",
+    neutral: "😐",
+    confident: "😎",
+    nervous: "😰",
+    calm: "😌",
+    frustrated: "😤",
+    excited: "🤩"
+  }
+  
+  indicator.querySelector(".emotion-icon").textContent = emojiMap[emotion] || "😐"
   indicator.querySelector(".emotion-label").textContent = emotion
   indicator.querySelector(".emotion-confidence").textContent = `${Math.round(confidence * 100)}% confidence`
 
