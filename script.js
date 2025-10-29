@@ -47,6 +47,15 @@ async function checkStatus() {
   }
 }
 
+// Handle API errors
+async function handleApiError(error) {
+    console.error("API Error:", error);
+    statusIndicator.classList.add("error");
+    statusIndicator.querySelector(".status-text").textContent = "API Error";
+    startBtn.disabled = true;
+    alert("Error connecting to the API. Please check the console for details.");
+}
+
 // Initialize audio visualization
 function setupCanvas() {
   canvas.width = canvas.offsetWidth
