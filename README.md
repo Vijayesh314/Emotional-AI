@@ -18,3 +18,7 @@ Live feedback for audio to judge how a person is feeling on call to analyze thei
 * Emotion Detection: Emotion detected using a AI model, allowing us to analyze facial expressions
 * AI Model: The API key utilizes gemini's 2.0 flash as our core AI model to provide human-like feedback
 * Frontend: The user interface was built using HTML/CSS and JSON for a responsive experience
+
+## Usage
+* Make sure your browser allows microphone access with no interruptions or delays in the microphone
+* Be close to the computer so that the microphone can properly hear and track your voice
