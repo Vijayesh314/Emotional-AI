@@ -15,7 +15,7 @@ Live feedback for audio to judge how a person is feeling on call to analyze thei
 
 ## Tech Stack
 * Backend: Python Flask for robust and manageable backend server along with Javascript for various functions
-* Emotion Detection: Emotion detected using a AI model, allowing us to analyze facial expressions
+* Emotion Detection: Emotion detected using a AI model, allowing us to analyze voice audio
 * AI Model: The API key utilizes gemini's 2.0 flash as our core AI model to provide human-like feedback
 * Frontend: The user interface was built using HTML/CSS and JSON for a responsive experience
 
