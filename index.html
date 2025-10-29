@@ -1,901 +1,109 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Presently - AI Presentation Coach</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    :root {
-      --primary: #667eea;
-      --primary-dark: #5a67d8;
-      --secondary: #48bb78;
-      --accent: #ed64a6;
-      --dark: #1a202c;
-      --darker: #0f1419;
-      --light: #f7fafc;
-      --text: #e2e8f0;
-      --border: #2d3748;
-      --success: #48bb78;
-      --warning: #f6ad55;
-      --danger: #fc8181;
-    }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      background: linear-gradient(135deg, var(--darker) 0%, var(--dark) 100%);
-      color: var(--text);
-      min-height: 100vh;
-      line-height: 1.6;
-    }
-
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 0 20px;
-    }
-
-    header {
-      background: rgba(26, 32, 44, 0.8);
-      backdrop-filter: blur(10px);
-      border-bottom: 1px solid var(--border);
-      padding: 1.5rem 0;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-    }
-
-    .header-content {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .logo {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      font-size: 1.75rem;
-      font-weight: 700;
-      background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    .logo svg {
-      width: 40px;
-      height: 40px;
-    }
-
-    .tagline {
-      font-size: 0.9rem;
-      color: #718096;
-      font-weight: normal;
-    }
-
-    main {
-      padding: 3rem 0;
-    }
-
-    .hero {
-      text-align: center;
-      margin-bottom: 3rem;
-    }
-
-    .hero h1 {
-      font-size: 2.5rem;
-      margin-bottom: 1rem;
-      background: linear-gradient(135deg, var(--light) 0%, var(--primary) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    .hero p {
-      font-size: 1.2rem;
-      color: #a0aec0;
-      max-width: 600px;
-      margin: 0 auto;
-    }
-
-    .upload-section {
-      background: rgba(45, 55, 72, 0.3);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 2rem;
-      margin-bottom: 2rem;
-    }
-
-    .upload-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 1.5rem;
-      margin-bottom: 2rem;
-    }
-
-    .upload-card {
-      background: rgba(26, 32, 44, 0.5);
-      border: 2px dashed var(--border);
-      border-radius: 12px;
-      padding: 2rem;
-      text-align: center;
-      transition: all 0.3s ease;
-      cursor: pointer;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .upload-card:hover {
-      border-color: var(--primary);
-      background: rgba(102, 126, 234, 0.1);
-      transform: translateY(-2px);
-    }
-
-    .upload-card.has-file {
-      border-color: var(--success);
-      background: rgba(72, 187, 120, 0.1);
-    }
-
-    .upload-icon {
-      width: 48px;
-      height: 48px;
-      margin: 0 auto 1rem;
-      opacity: 0.7;
-    }
-
-    .upload-label {
-      display: block;
-      font-weight: 600;
-      margin-bottom: 0.5rem;
-      color: var(--text);
-    }
-
-    .upload-hint {
-      font-size: 0.875rem;
-      color: #718096;
-    }
-
-    input[type="file"] {
-      position: absolute;
-      opacity: 0;
-      width: 100%;
-      height: 100%;
-      cursor: pointer;
-    }
-
-    .prompt-section {
-      margin-top: 2rem;
-    }
-
-    .prompt-label {
-      display: block;
-      font-weight: 600;
-      margin-bottom: 0.75rem;
-      color: var(--text);
-    }
-
-    textarea {
-      width: 100%;
-      padding: 1rem;
-      background: rgba(26, 32, 44, 0.5);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--text);
-      font-size: 1rem;
-      resize: vertical;
-      min-height: 120px;
-      transition: all 0.3s ease;
-    }
-
-    textarea:focus {
-      outline: none;
-      border-color: var(--primary);
-      background: rgba(26, 32, 44, 0.8);
-    }
-
-    .action-buttons {
-      display: flex;
-      gap: 1rem;
-      margin-top: 2rem;
-    }
-
-    button {
-      padding: 0.875rem 2rem;
-      border: none;
-      border-radius: 8px;
-      font-weight: 600;
-      font-size: 1rem;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    
-    .btn-primary {
-      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-      color: white;
-    }
-
-    .btn-primary:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
-    }
-
-    .btn-primary:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      transform: none;
-    }
-
-    .btn-secondary {
-      background: rgba(45, 55, 72, 0.5);
-      color: var(--text);
-      border: 1px solid var(--border);
-    }
-
-    .btn-secondary:hover {
-      background: rgba(45, 55, 72, 0.8);
-      border-color: var(--primary);
-    }
-
-    .results-section {
-      display: none;
-      animation: fadeIn 0.5s ease;
-    }
-
-    .results-section.active {
-      display: block;
-    }
-
-    @keyframes fadeIn {
-      from {
-        opacity: 0;
-        transform: translateY(20px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    .results-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 1.5rem;
-      margin-bottom: 2rem;
-    }
-
-    .result-card {
-      background: rgba(45, 55, 72, 0.3);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1.5rem;
-      transition: all 0.3s ease;
-    }
-
-    .result-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-    }
-
-    .result-card h3 {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin-bottom: 1rem;
-      color: var(--primary);
-      font-size: 1.1rem;
-    }
-
-    .result-card-icon {
-      width: 24px;
-      height: 24px;
-    }
-
-    .emotion-tags {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-      margin-top: 0.75rem;
-    }
-
-    .emotion-tag {
-      background: rgba(102, 126, 234, 0.2);
-      border: 1px solid var(--primary);
-      padding: 0.25rem 0.75rem;
-      border-radius: 20px;
-      font-size: 0.875rem;
-      color: var(--primary);
-    }
-
-    .score-display {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 2rem 0;
-    }
-
-    .score-circle {
-      width: 150px;
-      height: 150px;
-      border-radius: 50%;
-      background: conic-gradient(
-        var(--primary) 0deg,
-        var(--primary) calc(var(--score) * 3.6deg),
-        rgba(45, 55, 72, 0.3) calc(var(--score) * 3.6deg)
-      );
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      position: relative;
-    }
-
-    .score-inner {
-      width: 130px;
-      height: 130px;
-      border-radius: 50%;
-      background: var(--darker);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .score-value {
-      font-size: 2.5rem;
-      font-weight: 700;
-      background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    .score-label {
-      font-size: 0.875rem;
-      color: #718096;
-    }
-
-    .feedback-section {
-      background: rgba(45, 55, 72, 0.3);
-      border-left: 4px solid var(--primary);
-      border-radius: 8px;
-      padding: 1.5rem;
-      margin-top: 2rem;
-    }
-
-    .feedback-section h3 {
-      margin-bottom: 1rem;
-      color: var(--primary);
-    }
-
-    .feedback-list {
-      list-style: none;
-    }
-
-    .feedback-list li {
-      padding: 0.5rem 0;
-      padding-left: 1.5rem;
-      position: relative;
-      color: var(--text);
-    }
-
-    .feedback-list li:before {
-      content: "→";
-      position: absolute;
-      left: 0;
-      color: var(--primary);
-    }
-
-    .loading {
-      display: none;
-      text-align: center;
-      padding: 3rem;
-    }
-
-    .loading.active {
-      display: block;
-    }
-
-    .spinner {
-      width: 50px;
-      height: 50px;
-      border: 3px solid rgba(102, 126, 234, 0.2);
-      border-top-color: var(--primary);
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin: 0 auto 1rem;
-    }
-
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
-      }
-    }
-
-    .loading-text {
-      color: var(--primary);
-      font-size: 1.1rem;
-    }
-
-    .pills {
-      display: flex;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-      margin-top: 0.5rem;
-    }
-
-    .pill {
-      padding: 0.25rem 0.75rem;
-      border-radius: 20px;
-      font-size: 0.875rem;
-      font-weight: 500;
-    }
-
-    .pill-success {
-      background: rgba(72, 187, 120, 0.2);
-      color: var(--success);
-      border: 1px solid var(--success);
-    }
-
-    .pill-warning {
-      background: rgba(246, 173, 85, 0.2);
-      color: var(--warning);
-      border: 1px solid var(--warning);
-    }
-
-    .timeline {
-      margin-top: 1rem;
-    }
-
-    .timeline-item {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      padding: 0.5rem 0;
-      border-left: 2px solid var(--border);
-      padding-left: 1rem;
-      margin-left: 0.5rem;
-      position: relative;
-    }
-
-    .timeline-item:before {
-      content: "";
-      position: absolute;
-      left: -5px;
-      width: 8px;
-      height: 8px;
-      background: var(--primary);
-      border-radius: 50%;
-    }
-
-    .timeline-time {
-      font-size: 0.875rem;
-      color: #718096;
-      min-width: 60px;
-    }
-
-    .timeline-emotion {
-      font-weight: 500;
-      color: var(--text);
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Emotion Feedback System</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header>
-    <div class="container">
-      <div class="header-content">
-        <div class="logo">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5z"/>
-            <path d="M12 8v4m0 4h.01"/>
-          </svg>
-          <div>
-            Presently
-            <div class="tagline">Your AI Presentation Coach</div>
-          </div>
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">
+                    <span>EmotionAI <span class="tagline">Live Feedback</span></span>
+                </div>
+                <div id="status-indicator" class="status-indicator">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Checking...</span>
+                </div>
+            </div>
         </div>
-      </div>
-    </div>
-  </header>
+    </header>
 
-  <main>
-    <div class="container">
-      <div class="hero">
-        <h1>Perfect Your Presentation Skills</h1>
-        <p>Upload your practice video or audio and get instant AI-powered feedback on emotions, body language, and delivery</p>
-      </div>
-
-      <form id="analysisForm">
-        <div class="upload-section">
-          <div class="upload-grid">
-            <div class="upload-card" id="videoCard">
-              <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
-                <line x1="7" y1="2" x2="7" y2="22"/>
-                <line x1="17" y1="2" x2="17" y2="22"/>
-                <line x1="2" y1="12" x2="22" y2="12"/>
-                <line x1="2" y1="7" x2="7" y2="7"/>
-                <line x1="2" y1="17" x2="7" y2="17"/>
-                <line x1="17" y1="17" x2="22" y2="17"/>
-                <line x1="17" y1="7" x2="22" y2="7"/>
-              </svg>
-              <label class="upload-label" for="video">Upload Video</label>
-              <span class="upload-hint" id="videoHint">Drop your video here or click to browse</span>
-              <input type="file" id="video" name="video" accept="video/*" />
+    <main>
+        <div class="container">
+            <div class="hero">
+                <h1>Real-Time Emotion Detection</h1>
+                <p>Analyze your voice in real-time to detect emotional states and improve communication</p>
             </div>
 
-            <div class="upload-card" id="audioCard">
-              <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M9 18V5l12-2v13"/>
-                <circle cx="6" cy="18" r="3"/>
-                <circle cx="18" cy="16" r="3"/>
-              </svg>
-              <label class="upload-label" for="audio">Upload Audio</label>
-              <span class="upload-hint" id="audioHint">Drop your audio here or click to browse</span>
-              <input type="file" id="audio" name="audio" accept="audio/*" />
+            <div class="control-section">
+                <div class="control-card">
+                    <div class="audio-visualizer" id="visualizer">
+                        <canvas id="waveform"></canvas>
+                    </div>
+                    
+                    <div class="controls">
+                        <button id="startBtn" class="btn-primary">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                                <line x1="12" y1="19" x2="12" y2="23"/>
+                                <line x1="8" y1="23" x2="16" y2="23"/>
+                            </svg>
+                            Start Recording
+                        </button>
+                        <button id="stopBtn" class="btn-secondary" disabled>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                <rect x="6" y="6" width="12" height="12" rx="2"/>
+                            </svg>
+                            Stop Recording
+                        </button>
+                    </div>
+
+                    <div id="recording-status" class="recording-status">
+                        <span class="pulse-dot"></span>
+                        <span>Ready to record</span>
+                    </div>
+                </div>
             </div>
-          </div>
 
-          <div class="prompt-section">
-            <label class="prompt-label" for="prompt">
-              What would you like feedback on?
-            </label>
-            <textarea 
-              id="prompt" 
-              name="text_prompt" 
-              placeholder="E.g., How do I sound in a job interview? Is my body language confident? Am I speaking too fast?"
-            ></textarea>
-          </div>
+            <div id="results-section" class="results-section">
+                <div class="emotion-display">
+                    <div class="emotion-main">
+                        <div id="emotion-indicator" class="emotion-indicator neutral">
+                            <div class="emotion-icon">😐</div>
+                            <div class="emotion-label">Neutral</div>
+                            <div class="emotion-confidence">--</div>
+                        </div>
+                    </div>
+                    
+                    <div class="emotion-analysis">
+                        <h3>Analysis</h3>
+                        <p id="emotion-analysis-text">Start recording to see live emotion analysis...</p>
+                    </div>
+                </div>
 
-          <div class="action-buttons">
-            <button type="submit" class="btn-primary" id="analyzeBtn">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="11" cy="11" r="8"/>
-                <path d="m21 21-4.35-4.35"/>
-              </svg>
-              Analyze Performance
-            </button>
-            <button type="button" class="btn-secondary" id="resetBtn">
-              Clear All
-            </button>
-          </div>
-        </div>
-      </form>
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <div class="feature-label">Pitch</div>
+                        <div id="pitch-value" class="feature-value">--</div>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-label">Pace</div>
+                        <div id="pace-value" class="feature-value">--</div>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-label">Energy</div>
+                        <div id="energy-value" class="feature-value">--</div>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-label">Clarity</div>
+                        <div id="clarity-value" class="feature-value">--</div>
+                    </div>
+                </div>
 
-      <div class="loading" id="loading">
-        <div class="spinner"></div>
-        <div class="loading-text">Analyzing your performance...</div>
-      </div>
-
-      <div class="results-section" id="results">
-        <div class="score-display">
-          <div class="score-circle" style="--score: 0">
-            <div class="score-inner">
-              <div class="score-value" id="scoreValue">0</div>
-              <div class="score-label">Overall Score</div>
+                <div class="emotion-history">
+                    <h3>Emotion Timeline</h3>
+                    <div id="emotion-timeline" class="timeline">
+                        <p class="timeline-empty">No data yet. Start recording to see your emotion timeline.</p>
+                    </div>
+                </div>
             </div>
-          </div>
         </div>
+    </main>
 
-        <div class="results-grid">
-          <div class="result-card">
-            <h3>
-              <svg class="result-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"/>
-                <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
-                <line x1="9" y1="9" x2="9.01" y2="9"/>
-                <line x1="15" y1="9" x2="15.01" y2="9"/>
-              </svg>
-              Emotional Analysis
-            </h3>
-            <div id="emotionResults">
-              <div class="emotion-tags" id="emotionTags"></div>
-              <div class="timeline" id="emotionTimeline"></div>
-            </div>
-          </div>
-
-          <div class="result-card">
-            <h3>
-              <svg class="result-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 2v20"/>
-                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-              </svg>
-              Audio Analysis
-            </h3>
-            <div id="audioResults">
-              <div class="pills" id="audioPills"></div>
-            </div>
-          </div>
-
-          <div class="result-card">
-            <h3>
-              <svg class="result-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                <circle cx="12" cy="7" r="4"/>
-              </svg>
-              Body Language
-            </h3>
-            <div id="bodyLanguageResults"></div>
-          </div>
-        </div>
-
-        <div class="feedback-section">
-          <h3>Coaching Feedback</h3>
-          <div id="coachingFeedback"></div>
-        </div>
-
-        <div class="feedback-section">
-          <h3>Your Strengths</h3>
-          <ul class="feedback-list" id="strengthsList"></ul>
-        </div>
-
-        <div class="feedback-section">
-          <h3>Areas for Improvement</h3>
-          <ul class="feedback-list" id="improvementList"></ul>
-        </div>
-
-        <div class="feedback-section">
-          <h3>Professional Tips</h3>
-          <ul class="feedback-list" id="tipsList"></ul>
-        </div>
-      </div>
-    </div>
-  </main>
-
-  <script>
-    const form = document.getElementById('analysisForm');
-    const loading = document.getElementById('loading');
-    const results = document.getElementById('results');
-    const videoInput = document.getElementById('video');
-    const audioInput = document.getElementById('audio');
-    const videoCard = document.getElementById('videoCard');
-    const audioCard = document.getElementById('audioCard');
-    const videoHint = document.getElementById('videoHint');
-    const audioHint = document.getElementById('audioHint');
-    const resetBtn = document.getElementById('resetBtn');
-
-    // Prevent default drag behaviors
-    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-      document.addEventListener(eventName, preventDefaults, false);
-      videoCard.addEventListener(eventName, preventDefaults, false);
-      audioCard.addEventListener(eventName, preventDefaults, false);
-    });
-
-    function preventDefaults(e) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-
-    // Highlight drop area when item is dragged over it
-    ['dragenter', 'dragover'].forEach(eventName => {
-      videoCard.addEventListener(eventName, () => {
-        videoCard.style.borderColor = 'var(--primary)';
-        videoCard.style.background = 'rgba(102, 126, 234, 0.1)';
-      }, false);
-
-      audioCard.addEventListener(eventName, () => {
-        audioCard.style.borderColor = 'var(--primary)';
-        audioCard.style.background = 'rgba(102, 126, 234, 0.1)';
-      }, false);
-    });
-
-    ['dragleave', 'drop'].forEach(eventName => {
-      videoCard.addEventListener(eventName, () => {
-        if (!videoCard.classList.contains('has-file')) {
-          videoCard.style.borderColor = '';
-          videoCard.style.background = '';
-        }
-      }, false);
-
-      audioCard.addEventListener(eventName, () => {
-        if (!audioCard.classList.contains('has-file')) {
-          audioCard.style.borderColor = '';
-          audioCard.style.background = '';
-        }
-      }, false);
-    });
-
-    // Handle dropped files for video
-    videoCard.addEventListener('drop', (e) => {
-      const dt = e.dataTransfer;
-      const files = dt.files;
-
-      if (files.length > 0) {
-        // Create a new FileList-like object
-        const dataTransfer = new DataTransfer();
-        dataTransfer.items.add(files[0]);
-        videoInput.files = dataTransfer.files;
-
-        videoCard.classList.add('has-file');
-        videoHint.textContent = files[0].name;
-      }
-    }, false);
-
-    // Handle dropped files for audio
-    audioCard.addEventListener('drop', (e) => {
-      const dt = e.dataTransfer;
-      const files = dt.files;
-
-      if (files.length > 0) {
-        // Create a new FileList-like object
-        const dataTransfer = new DataTransfer();
-        dataTransfer.items.add(files[0]);
-        audioInput.files = dataTransfer.files;
-
-        audioCard.classList.add('has-file');
-        audioHint.textContent = files[0].name;
-      }
-    }, false);
-
-    // Handle regular file input changes
-    videoInput.addEventListener('change', (e) => {
-      if (e.target.files[0]) {
-        videoCard.classList.add('has-file');
-        videoHint.textContent = e.target.files[0].name;
-      }
-    });
-
-    audioInput.addEventListener('change', (e) => {
-      if (e.target.files[0]) {
-        audioCard.classList.add('has-file');
-        audioHint.textContent = e.target.files[0].name;
-      }
-    });
-
-    resetBtn.addEventListener('click', () => {
-      form.reset();
-      videoCard.classList.remove('has-file');
-      audioCard.classList.remove('has-file');
-      videoHint.textContent = 'Drop your video here or click to browse';
-      audioHint.textContent = 'Drop your audio here or click to browse';
-      results.classList.remove('active');
-    });
-
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-
-      const videoFile = videoInput.files[0];
-      const audioFile = audioInput.files[0];
-      const prompt = document.getElementById('prompt').value;
-
-      if (!videoFile && !audioFile && !prompt) {
-        alert('Please provide at least one input (video, audio, or prompt)');
-        return;
-      }
-
-      loading.classList.add('active');
-      results.classList.remove('active');
-
-      const formData = new FormData();
-      if (videoFile) formData.append('video', videoFile);
-      if (audioFile) formData.append('audio', audioFile);
-      if (prompt.trim()) formData.append('text_prompt', prompt);
-
-            try {
-        const response = await fetch('/analyze', {
-          method: 'POST',
-          body: formData
-        });
-        
-        if (!response.ok) {
-          throw new Error('Server error');
-        }
-
-        const data = await response.json();
-        displayResults(data);
-
-      } catch (err) {
-        console.error('Error:', err);
-        alert('Error analyzing performance. Please ensure the Flask backend is running with your GEMINI_API_KEY set.');
-      } finally {
-        loading.classList.remove('active');
-      }
-    });
-
-    function displayResults(data) {
-      results.classList.add('active');
-
-      // Overall Score
-      const score = data.overall_score || 75;
-      document.getElementById('scoreValue').textContent = score;
-      document.querySelector('.score-circle').style.setProperty('--score', score);
-
-      // Emotions
-      const emotionTags = document.getElementById('emotionTags');
-      emotionTags.innerHTML = '';
-      if (data.video_emotions && data.video_emotions.length > 0) {
-        data.video_emotions.forEach(emotion => {
-          const tag = document.createElement('span');
-          tag.className = 'emotion-tag';
-          tag.textContent = emotion;
-          emotionTags.appendChild(tag);
-        });
-      }
-
-      // Emotion Timeline
-      const timeline = document.getElementById('emotionTimeline');
-      timeline.innerHTML = '';
-      if (data.emotion_timeline && data.emotion_timeline.length > 0) {
-        data.emotion_timeline.slice(0, 5).forEach(item => {
-          const div = document.createElement('div');
-          div.className = 'timeline-item';
-          div.innerHTML = `
-            <span class="timeline-time">${item.timestamp}s</span>
-            <span class="timeline-emotion">${item.emotion}</span>
-          `;
-          timeline.appendChild(div);
-        });
-      }
-
-      // Audio Analysis
-      const audioPills = document.getElementById('audioPills');
-      audioPills.innerHTML = '';
-      if (data.audio_analysis) {
-        if (data.audio_analysis.average_pitch) {
-          audioPills.innerHTML += `<span class="pill pill-success">Pitch: ${Math.round(data.audio_analysis.average_pitch)} Hz</span>`;
-        }
-        if (data.audio_analysis.intensity) {
-          audioPills.innerHTML += `<span class="pill pill-warning">Intensity: ${data.audio_analysis.intensity.toFixed(3)}</span>`;
-        }
-        if (data.audio_analysis.tempo) {
-          audioPills.innerHTML += `<span class="pill pill-success">Tempo: ${Math.round(data.audio_analysis.tempo)} BPM</span>`;
-        }
-      }
-
-      if (data.audio_feedback) {
-        if (data.audio_feedback.confidence_level) {
-          audioPills.innerHTML += `<span class="pill pill-success">Confidence: ${data.audio_feedback.confidence_level}/10</span>`;
-        }
-      }
-
-      // Body Language
-      const bodyLang = document.getElementById('bodyLanguageResults');
-      bodyLang.textContent = data.body_language || 'Analysis pending...';
-
-      // Coaching Feedback
-      const coaching = document.getElementById('coachingFeedback');
-      coaching.textContent = data.coaching_feedback || 'No specific feedback available.';
-
-      // Strengths
-      const strengthsList = document.getElementById('strengthsList');
-      strengthsList.innerHTML = '';
-      if (data.strengths && data.strengths.length > 0) {
-        data.strengths.forEach(strength => {
-          const li = document.createElement('li');
-          li.textContent = strength;
-          strengthsList.appendChild(li);
-        });
-      }
-
-      // Improvements
-      const improvementList = document.getElementById('improvementList');
-      improvementList.innerHTML = '';
-      if (data.improvement_areas && data.improvement_areas.length > 0) {
-        data.improvement_areas.forEach(area => {
-          const li = document.createElement('li');
-          li.textContent = area;
-          improvementList.appendChild(li);
-        });
-      }
-
-      // Tips
-      const tipsList = document.getElementById('tipsList');
-      tipsList.innerHTML = '';
-      if (data.professional_tips && data.professional_tips.length > 0) {
-        data.professional_tips.forEach(tip => {
-          const li = document.createElement('li');
-          li.textContent = tip;
-          tipsList.appendChild(li);
-        });
-      }
-    }
-  </script>
+    <script src="script.js"></script>
 </body>
 </html>
