@@ -8,8 +8,6 @@ import json
 from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 import requests
-import subprocess
-import tempfile
 
 # Configure logging
 logging.basicConfig(
@@ -25,7 +23,7 @@ app = Flask(__name__)
 CORS(app)
 
 # Hume AI Configuration
-HUME_API_KEY = os.getenv("HUME_API_KEY")  # Get free key from platform.hume.ai
+HUME_API_KEY = os.getenv("HUME_API_KEY")
 HUME_API_URL = "https://api.hume.ai/v0/batch/jobs"
 
 # Store active analysis sessions
@@ -159,9 +157,10 @@ def analyze_chunk():
                 if pred_response.status_code == 200:
                     predictions_data = pred_response.json()
                     
-                    # Debug: log the structure
-                    if i == 0:
-                        logging.debug(f"Response structure: {json.dumps(predictions_data, indent=2)[:500]}")
+                    # Debug: ALWAYS log the full structure to see what's happening
+                    logging.debug(f"=== FULL HUME RESPONSE (attempt {i}) ===")
+                    logging.debug(json.dumps(predictions_data, indent=2))
+                    logging.debug("=== END RESPONSE ===")
                     
                     # Check if we have results
                     if predictions_data and len(predictions_data) > 0:
@@ -274,7 +273,7 @@ def analyze_chunk():
                                     if len(active_sessions[session_id]['results']) > 5:
                                         active_sessions[session_id]['results'].pop(0)
                                     
-                                    logging.info(f"Emotion detected: {mapped_emotion} ({score:.2f}) from {emotion_name}")
+                                    logging.info(f"✅ Emotion detected: {mapped_emotion} ({score:.2f}) from {emotion_name}")
                                     return jsonify(result)
             
             # Timeout - return neutral
