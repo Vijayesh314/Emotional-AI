@@ -39,6 +39,14 @@ def home():
         logging.error(f"Error serving index.html: {e}")
         return f"Error loading page: {str(e)}", 500
     
+@app.route('/login.html')
+def login():
+    try:
+        return send_from_directory('.', 'login.html')
+    except Exception as e:
+        logging.error(f"Error serving login.html: {e}")
+        return f"Error loading page: {str(e)}", 500
+    
 @app.route('/style.css')
 def serve_css():
     return send_from_directory('.', 'style.css', mimetype='text/css')
@@ -236,6 +244,10 @@ scheduler.start()
 if __name__ == '__main__':
     if not GEMINI_API_KEY:
         logging.warning("GEMINI_API_KEY not configured! Get one from https://aistudio.google.com/app/apikey")
+    
+    print(f"Local access: http://localhost:5000/")
+    print(f"Login page:   http://localhost:5000/login.html")
+    print(f"Main app:     http://localhost:5000/")
     
     try:
         app.run(host='0.0.0.0', port=5000, debug=True)
