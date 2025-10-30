@@ -1,5 +1,5 @@
 # Emotional-AI
-Live feedback for audio to judge how a person is feeling on call to analyze their emotions and act accordingly. Potential use cases include in healthcare in order to find out if a person is nervous, and in business with investors.
+This is a real-time voice emotion analysis that provides live feedback to help understand emotional states during conversations. Its powered by Google's Gemini 2.0 Flash AI and Firebase Authentication.
 
 ## How it works
 * Recording starts
@@ -14,6 +14,7 @@ Live feedback for audio to judge how a person is feeling on call to analyze thei
 * Live Vizualization
 * Multiple emotions that can be detected
 * Emotional timeline
+* Firebase authentication
 * Pitch, clarity, pace, energy tracking
 
 ## Emotions Categories
@@ -43,9 +44,12 @@ Live feedback for audio to judge how a person is feeling on call to analyze thei
 
 ## Tech Stack
 * Backend: Python Flask for robust and manageable backend server along with Javascript for various functions
+* Authentication: Firebase sign-in (email/password and/or google sigg-in)
 * Emotion Detection: Emotion detected using a AI model, allowing us to analyze voice audio
 * AI Model: The API key utilizes gemini's 2.0 flash as our core AI model to provide human-like feedback
 * Frontend: The user interface was built using HTML/CSS and JSON for a responsive experience
+* Audio Processor: Web Audio AI and MediaRecorder
+* Data Format: 16kHz WAV audio
 
 ## Usage
 * Make sure your browser allows microphone access with no interruptions or delays in the microphone
