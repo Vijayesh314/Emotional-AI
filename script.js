@@ -12,9 +12,9 @@ let isAnalyzing = false
 const emotionHistory = []
 
 // Configuration
-const CHUNK_DURATION = 3000 // Increased to 3 seconds to reduce API load
-const MIN_CHUNK_SIZE = 5000 // Increased minimum size
-const MAX_CONCURRENT_ANALYSIS = 1 // Only process one at a time
+const CHUNK_DURATION = 30000 // 30 seconds - gives Hume time to process
+const MIN_CHUNK_SIZE = 10000 // Larger chunks
+const MAX_CONCURRENT_ANALYSIS = 1
 
 // DOM elements
 const startBtn = document.getElementById("startBtn")
@@ -45,15 +45,6 @@ async function checkStatus() {
     statusIndicator.querySelector(".status-text").textContent = "Connection Error"
     startBtn.disabled = true
   }
-}
-
-// Handle API errors
-async function handleApiError(error) {
-    console.error("API Error:", error);
-    statusIndicator.classList.add("error");
-    statusIndicator.querySelector(".status-text").textContent = "API Error";
-    startBtn.disabled = true;
-    alert("Error connecting to the API. Please check the console for details.");
 }
 
 // Initialize audio visualization
@@ -136,6 +127,8 @@ async function processQueue() {
         // Show analyzing indicator
         updateStatusText("Analyzing...")
         
+        const startTime = Date.now()
+        
         const response = await fetch("/api/analyze-chunk", {
           method: "POST",
           headers: {
@@ -147,39 +140,40 @@ async function processQueue() {
           }),
         })
 
+        const processingTime = ((Date.now() - startTime) / 1000).toFixed(1)
+
         if (response.ok) {
           const result = await response.json()
           
-          if (!result.skipped) {
-            updateUI(result)
-            updateStatusText(`Recording... (${result.emotion} detected)`)
-          } else {
-            updateStatusText("Recording...")
-          }
+          updateUI(result)
+          updateStatusText(`Recording... (${result.emotion} detected in ${processingTime}s)`)
+          
+          console.log(`Analysis completed in ${processingTime}s`)
         } else {
           const errorData = await response.json()
           console.error("Analysis failed:", errorData)
-          updateStatusText("Recording... (analysis error)")
+          updateStatusText("Recording... (analysis error - continuing)")
           
-          // Clear queue on persistent errors to prevent backup
-          if (analysisQueue.length > 3) {
+          // Clear queue if too many errors pile up
+          if (analysisQueue.length > 5) {
             console.warn("Clearing analysis queue due to errors")
             analysisQueue = []
           }
         }
       } catch (error) {
         console.error("Error analyzing chunk:", error)
-        updateStatusText("Recording... (error)")
+        updateStatusText("Recording... (error - continuing)")
       } finally {
-        // Wait before processing next to avoid rate limits
-        setTimeout(() => processQueue(), 500)
+        // CRITICAL: Wait 5 seconds before processing next chunk
+        // Hume batch API needs time between requests
+        setTimeout(() => processQueue(), 5000)
       }
     }
     
     reader.readAsDataURL(audioBlob)
   } catch (error) {
     console.error("Error processing chunk:", error)
-    setTimeout(() => processQueue(), 500)
+    setTimeout(() => processQueue(), 1000)
   }
 }
 
@@ -188,11 +182,13 @@ function updateStatusText(text) {
   const statusSpan = recordingStatus.querySelector("span:last-child")
   statusSpan.textContent = text
   
-  // Add analyzing indicator
+  // Add color indicators
   if (text.includes("Analyzing")) {
     statusSpan.style.color = "#f6ad55"
   } else if (text.includes("error")) {
     statusSpan.style.color = "#fc8181"
+  } else if (text.includes("detected")) {
+    statusSpan.style.color = "#48bb78"
   } else {
     statusSpan.style.color = ""
   }
@@ -205,7 +201,8 @@ async function startRecording() {
       audio: {
         echoCancellation: true,
         noiseSuppression: true,
-        autoGainControl: true
+        autoGainControl: true,
+        sampleRate: 16000  // 16kHz for better compatibility
       } 
     })
 
@@ -218,25 +215,79 @@ async function startRecording() {
     const bufferLength = analyser.frequencyBinCount
     dataArray = new Uint8Array(bufferLength)
 
+    // Try WAV format first, fallback to WebM
+    let mimeType = 'audio/wav'
+    if (!MediaRecorder.isTypeSupported(mimeType)) {
+      console.warn('WAV not supported, trying audio/webm')
+      mimeType = 'audio/webm;codecs=opus'
+    }
+    
     // Setup media recorder with time slicing
     mediaRecorder = new MediaRecorder(stream, {
-      mimeType: 'audio/webm;codecs=opus'
+      mimeType: mimeType,
+      audioBitsPerSecond: 128000
     })
+    
+    console.log(`Using MIME type: ${mimeType}`)
     
     // Generate session ID
     sessionId = `session_${Date.now()}`
     
+    // Clear any previous state
+    analysisQueue = []
+    isAnalyzing = false
+    
+    // Store audio chunks to combine into WAV
+    let audioChunks = []
+    
     mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > MIN_CHUNK_SIZE) {
-        // Process this chunk
-        processAudioChunk(event.data)
+      if (event.data.size > 0) {
+        audioChunks.push(event.data)
       }
     }
+    
+    mediaRecorder.onstop = async () => {
+      // Combine chunks and convert to WAV
+      const audioBlob = new Blob(audioChunks, { type: mimeType })
+      
+      if (audioBlob.size > MIN_CHUNK_SIZE) {
+        // Convert to WAV using AudioContext
+        const arrayBuffer = await audioBlob.arrayBuffer()
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer)
+        
+        // Convert AudioBuffer to WAV
+        const wavBlob = audioBufferToWav(audioBuffer)
+        console.log(`Created WAV: ${wavBlob.size} bytes`)
+        processAudioChunk(wavBlob)
+      }
+      
+      audioChunks = []
+    }
 
-    // Start recording with time slicing (get chunks automatically)
-    mediaRecorder.start(CHUNK_DURATION)
+    // Start recording - stop every 30 seconds to create chunks
+    mediaRecorder.start()
     isRecording = true
     recordingStartTime = Date.now()
+    
+    // Create chunks by stopping/starting every 30 seconds
+    const chunkInterval = setInterval(() => {
+      if (!isRecording) {
+        clearInterval(chunkInterval)
+        return
+      }
+      
+      if (mediaRecorder.state === 'recording') {
+        mediaRecorder.stop()
+        
+        // Restart recording for next chunk
+        setTimeout(() => {
+          if (isRecording) {
+            audioChunks = []
+            mediaRecorder.start()
+          }
+        }, 100)
+      }
+    }, CHUNK_DURATION)
 
     // Update UI
     startBtn.disabled = true
@@ -249,11 +300,83 @@ async function startRecording() {
     setupCanvas()
     drawWaveform()
 
-    console.log("Recording started with real-time analysis")
+    console.log("Recording started with 30-second WAV chunks")
   } catch (error) {
     console.error("Error starting recording:", error)
     alert("Could not access microphone. Please check permissions.")
   }
+}
+
+// Convert AudioBuffer to WAV blob
+function audioBufferToWav(buffer) {
+  const numChannels = 1  // Mono
+  const sampleRate = 16000
+  const format = 1  // PCM
+  const bitDepth = 16
+  
+  // Resample to 16kHz if needed
+  let audioData
+  if (buffer.sampleRate !== sampleRate) {
+    audioData = resampleBuffer(buffer, sampleRate)
+  } else {
+    audioData = buffer.getChannelData(0)
+  }
+  
+  const dataLength = audioData.length * (bitDepth / 8)
+  const buffer_bytes = new ArrayBuffer(44 + dataLength)
+  const view = new DataView(buffer_bytes)
+  
+  // WAV header
+  writeString(view, 0, 'RIFF')
+  view.setUint32(4, 36 + dataLength, true)
+  writeString(view, 8, 'WAVE')
+  writeString(view, 12, 'fmt ')
+  view.setUint32(16, 16, true)
+  view.setUint16(20, format, true)
+  view.setUint16(22, numChannels, true)
+  view.setUint32(24, sampleRate, true)
+  view.setUint32(28, sampleRate * numChannels * (bitDepth / 8), true)
+  view.setUint16(32, numChannels * (bitDepth / 8), true)
+  view.setUint16(34, bitDepth, true)
+  writeString(view, 36, 'data')
+  view.setUint32(40, dataLength, true)
+  
+  // Write PCM samples
+  const offset = 44
+  for (let i = 0; i < audioData.length; i++) {
+    const sample = Math.max(-1, Math.min(1, audioData[i]))
+    view.setInt16(offset + i * 2, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true)
+  }
+  
+  return new Blob([buffer_bytes], { type: 'audio/wav' })
+}
+
+function writeString(view, offset, string) {
+  for (let i = 0; i < string.length; i++) {
+    view.setUint8(offset + i, string.charCodeAt(i))
+  }
+}
+
+function resampleBuffer(buffer, targetSampleRate) {
+  const sourceSampleRate = buffer.sampleRate
+  const sourceData = buffer.getChannelData(0)
+  const ratio = sourceSampleRate / targetSampleRate
+  const targetLength = Math.round(sourceData.length / ratio)
+  const resampledData = new Float32Array(targetLength)
+  
+  for (let i = 0; i < targetLength; i++) {
+    const sourceIndex = i * ratio
+    const index = Math.floor(sourceIndex)
+    const fraction = sourceIndex - index
+    
+    if (index + 1 < sourceData.length) {
+      resampledData[i] = sourceData[index] * (1 - fraction) + sourceData[index + 1] * fraction
+    } else {
+      resampledData[i] = sourceData[index]
+    }
+  }
+  
+  return resampledData
 }
 
 // Stop recording
