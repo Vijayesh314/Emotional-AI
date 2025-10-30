@@ -8,6 +8,33 @@ Live feedback for audio to judge how a person is feeling on call to analyze thei
 * Updates UI with feedback
 * Continue recording (loop)
 
+## Features
+* Real time voice analysis
+* Gemini 2.0 Flash AI powered
+* Live Vizualization
+* Multiple emotions that can be detected
+* Emotional timeline
+* Pitch, clarity, pace, energy tracking
+
+## Emotions Categories
+* happy 😊 - Joyful, cheerful, pleased
+* sad 😢 - Unhappy, sorrowful, melancholy
+* angry 😠 - Frustrated, irritated
+* fearful 😨 - Afraid, anxious
+* surprised 😲 - Shocked, amazed
+* neutral 😐 - No strong emotion
+* calm 😌 - Relaxed, peaceful
+* confident 😎 - Assured, certain
+* nervous 😰 - Tense, worried, uneasy
+* excited 🤩 - Enthusiastic, energetic
+* frustrated 😤 - Irritated, annoyed
+
+## Voice categories
+* Pitch: High, Medium, Low
+* Pace: Fast, Moderate, Slow
+* Energy: High, Moderate, Low
+* Clarity: Excellent, Good, Fair, Poor
+
 ## Why it matters
 * In tele-health and remote therapy settings, clinicians may not notice subtle anxiety, distress or disengagement when only voice is available, so this tool adds an extra layer of emotional awareness
 * In business, sales, investor-calls or negotiations, presenters can monitor how their audience (or themselves) are feeling and adjust their tone, pacing or content accordingly
