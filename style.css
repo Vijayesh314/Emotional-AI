@@ -435,3 +435,56 @@ button {
     width: 100%;
   }
 }
+
+/* Add these styles to your existing style.css */
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 1rem;
+  background: rgba(26, 32, 44, 0.5);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+}
+
+.user-info span {
+  color: var(--text);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.btn-logout {
+  padding: 0.5rem 1rem;
+  background: rgba(252, 129, 129, 0.2);
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  color: var(--danger);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.btn-logout:hover {
+  background: rgba(252, 129, 129, 0.3);
+  transform: translateY(-1px);
+}
+
+@media (max-width: 768px) {
+  .header-right {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .user-info {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
