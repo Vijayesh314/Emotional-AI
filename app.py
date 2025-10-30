@@ -7,7 +7,7 @@ import base64
 import json
 from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
-import requests
+import google.generativeai as genai
 
 # Configure logging
 logging.basicConfig(
@@ -22,9 +22,10 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-# Hume AI Configuration
-HUME_API_KEY = os.getenv("HUME_API_KEY")
-HUME_API_URL = "https://api.hume.ai/v0/batch/jobs"
+# Gemini AI Configuration
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
 
 # Store active analysis sessions
 active_sessions = {}
@@ -44,30 +45,15 @@ def serve_css():
 
 @app.route('/script.js')
 def serve_js():
-    from datetime import datetime
-    # Add cache busting
-    return send_from_directory('.', 'script.js', mimetype='application/javascript'), {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0'
-    }
+    return send_from_directory('.', 'script.js', mimetype='text/javascript')
 
-@app.route('/api/check-status', methods=['GET'])
+@app.route('/api/check-status')
 def check_status():
-    if not HUME_API_KEY:
-        return jsonify({
-            "configured": False,
-            "message": "Hume API key not configured"
-        }), 500
-    
-    return jsonify({
-        "configured": True,
-        "message": "System ready"
-    })
+    return jsonify({"configured": bool(GEMINI_API_KEY)})
 
 @app.route('/api/analyze-chunk', methods=['POST'])
 def analyze_chunk():
-    """Analyze emotion using Hume AI's Expression Measurement API"""
+    # Analyze emotion using Gemini's multimodal capabilities
     try:
         data = request.json
         if not data or 'audio' not in data:
@@ -76,7 +62,7 @@ def analyze_chunk():
         audio_data = data['audio']
         session_id = data.get('session_id', 'default')
         
-        if not HUME_API_KEY:
+        if not GEMINI_API_KEY:
             return jsonify({"error": "API key not configured"}), 500
         
         # Decode audio data
@@ -88,221 +74,126 @@ def analyze_chunk():
             logging.error(f"Error decoding audio data: {decode_error}")
             return jsonify({"error": "Invalid audio data format"}), 400
         
+        # Define the emotion mapping
+        emotion_map = {
+            'happy': 'happy', 'joyful': 'happy', 'pleased': 'happy', 'cheerful': 'happy',
+            'sad': 'sad', 'unhappy': 'sad', 'sorrowful': 'sad', 'melancholy': 'sad',
+            'angry': 'angry', 'frustrated': 'frustrated', 'irritated': 'frustrated',
+            'fearful': 'fearful', 'afraid': 'fearful', 'anxious': 'nervous', 'worried': 'nervous',
+            'surprised': 'surprised', 'shocked': 'surprised', 'amazed': 'surprised',
+            'neutral': 'neutral', 'calm': 'calm', 'relaxed': 'calm', 'peaceful': 'calm',
+            'confident': 'confident', 'assured': 'confident', 'certain': 'confident',
+            'nervous': 'nervous', 'tense': 'nervous', 'uneasy': 'nervous',
+            'excited': 'excited', 'enthusiastic': 'excited', 'energetic': 'excited'
+        }
+        
+        default_result = {
+            "emotion": "neutral",
+            "confidence": 0.5,
+            "voice_features": {
+                "pitch": "medium",
+                "pace": "moderate", 
+                "energy": "moderate",
+                "clarity": "good"
+            },
+            "analysis": "Could not analyze audio. Please ensure clear speech is present."
+        }
+        
         try:
-            # Audio should already be WAV from frontend
             logging.info(f"Received audio: {len(audio_bytes)} bytes")
             
-            # Use Hume's Expression Measurement API
-            url = "https://api.hume.ai/v0/batch/jobs"
+            # Initialize Gemini model (using gemini-2.0-flash)
+            model = genai.GenerativeModel('gemini-2.0-flash')
             
-            headers = {
-                "X-Hume-Api-Key": HUME_API_KEY
+            # Prepare audio for Gemini
+            audio_part = {
+                'mime_type': 'audio/wav',
+                'data': audio_bytes
             }
             
-            files = {
-                'file': ('audio.wav', audio_bytes, 'audio/wav')
-            }
+            # Create a detailed prompt for emotion analysis
+            prompt = """Analyze the emotional content of this audio clip. 
             
-            # Request prosody analysis
-            models_config = {
-                "models": {
-                    "prosody": {}
-                }
-            }
-            
-            data_payload = {
-                'json': json.dumps(models_config)
-            }
-            
-            # Submit the job
-            response = requests.post(url, headers=headers, files=files, data=data_payload)
-            
-            if response.status_code != 200:
-                logging.error(f"Hume API error: {response.status_code} - {response.text}")
-                # Return neutral fallback
-                return jsonify({
-                    "emotion": "neutral",
-                    "confidence": 0.5,
-                    "voice_features": {
-                        "pitch": "medium",
-                        "pace": "moderate",
-                        "energy": "moderate",
-                        "clarity": "good"
-                    },
-                    "analysis": "Processing..."
-                })
-            
-            job_data = response.json()
-            job_id = job_data.get('job_id')
-            
-            if not job_id:
-                raise Exception("No job_id returned from Hume API")
-            
-            # Poll for completion (with timeout)
-            import time
-            max_wait = 15  # Increase to 15 seconds
-            check_interval = 0.8
-            attempts = int(max_wait / check_interval)
-            
-            for i in range(attempts):
-                time.sleep(check_interval)
-                
-                predictions_url = f"{url}/{job_id}/predictions"
-                pred_response = requests.get(predictions_url, headers=headers)
-                
-                if pred_response.status_code == 400:
-                    # Job not ready yet, continue polling
-                    continue
-                
-                if pred_response.status_code == 200:
-                    predictions_data = pred_response.json()
-                    
-                    # Debug: ALWAYS log the full structure to see what's happening
-                    logging.debug(f"=== FULL HUME RESPONSE (attempt {i}) ===")
-                    logging.debug(json.dumps(predictions_data, indent=2))
-                    logging.debug("=== END RESPONSE ===")
-                    
-                    # Check if we have results
-                    if predictions_data and len(predictions_data) > 0:
-                        result_item = predictions_data[0]
-                        
-                        # Navigate the response structure
-                        results = result_item.get('results', {})
-                        predictions_list = results.get('predictions', [])
-                        
-                        if predictions_list and len(predictions_list) > 0:
-                            first_prediction = predictions_list[0]
-                            models_data = first_prediction.get('models', {})
-                            prosody_data = models_data.get('prosody', {})
-                            grouped = prosody_data.get('grouped_predictions', [])
-                            
-                            if grouped and len(grouped) > 0:
-                                emotions_list = grouped[0].get('predictions', [])
-                                
-                                if emotions_list and len(emotions_list) > 0:
-                                    # Sort by confidence
-                                    emotions_list.sort(key=lambda x: x.get('score', 0), reverse=True)
-                                    
-                                    top_emotion = emotions_list[0]
-                                    emotion_name = top_emotion.get('name', 'neutral').lower()
-                                    score = top_emotion.get('score', 0.5)
-                                    
-                                    # Map Hume emotions to our UI emotions
-                                    emotion_map = {
-                                        'admiration': 'happy',
-                                        'adoration': 'happy',
-                                        'aesthetic appreciation': 'calm',
-                                        'amusement': 'happy',
-                                        'anger': 'angry',
-                                        'anxiety': 'nervous',
-                                        'awe': 'surprised',
-                                        'awkwardness': 'nervous',
-                                        'boredom': 'neutral',
-                                        'calmness': 'calm',
-                                        'concentration': 'confident',
-                                        'confusion': 'neutral',
-                                        'contemplation': 'calm',
-                                        'contempt': 'frustrated',
-                                        'contentment': 'calm',
-                                        'craving': 'excited',
-                                        'determination': 'confident',
-                                        'disappointment': 'sad',
-                                        'disgust': 'frustrated',
-                                        'distress': 'fearful',
-                                        'doubt': 'nervous',
-                                        'ecstasy': 'excited',
-                                        'embarrassment': 'nervous',
-                                        'empathic pain': 'sad',
-                                        'entrancement': 'surprised',
-                                        'excitement': 'excited',
-                                        'fear': 'fearful',
-                                        'guilt': 'sad',
-                                        'horror': 'fearful',
-                                        'interest': 'confident',
-                                        'joy': 'happy',
-                                        'love': 'happy',
-                                        'nostalgia': 'calm',
-                                        'pain': 'sad',
-                                        'pride': 'confident',
-                                        'realization': 'surprised',
-                                        'relief': 'calm',
-                                        'romance': 'happy',
-                                        'sadness': 'sad',
-                                        'satisfaction': 'calm',
-                                        'desire': 'excited',
-                                        'shame': 'sad',
-                                        'surprise (negative)': 'surprised',
-                                        'surprise (positive)': 'surprised',
-                                        'sympathy': 'calm',
-                                        'tiredness': 'neutral',
-                                        'triumph': 'confident'
-                                    }
-                                    
-                                    mapped_emotion = emotion_map.get(emotion_name, 'neutral')
-                                    
-                                    # Analyze voice features from top emotions
-                                    energy_emotions = ['excitement', 'anger', 'joy', 'triumph']
-                                    calm_emotions = ['calmness', 'contentment', 'relief']
-                                    
-                                    energy_level = "high" if emotion_name in energy_emotions else (
-                                        "low" if emotion_name in calm_emotions else "moderate"
-                                    )
-                                    
-                                    result = {
-                                        "emotion": mapped_emotion,
-                                        "confidence": min(score, 1.0),
-                                        "voice_features": {
-                                            "pitch": "high" if score > 0.7 else "medium",
-                                            "pace": "fast" if energy_level == "high" else "moderate",
-                                            "energy": energy_level,
-                                            "clarity": "excellent" if score > 0.6 else "good"
-                                        },
-                                        "analysis": f"Voice analysis detected {mapped_emotion} emotion (original: {emotion_name})"
-                                    }
-                                    
-                                    # Store in session
-                                    if session_id not in active_sessions:
-                                        active_sessions[session_id] = {
-                                            'results': [],
-                                            'last_active': datetime.now()
-                                        }
-                                    
-                                    active_sessions[session_id]['last_active'] = datetime.now()
-                                    active_sessions[session_id]['results'].append(result)
-                                    
-                                    if len(active_sessions[session_id]['results']) > 5:
-                                        active_sessions[session_id]['results'].pop(0)
-                                    
-                                    logging.info(f"✅ Emotion detected: {mapped_emotion} ({score:.2f}) from {emotion_name}")
-                                    return jsonify(result)
-            
-            # Timeout - return neutral
-            logging.warning("Analysis timed out, returning neutral")
-            return jsonify({
-                "emotion": "neutral",
-                "confidence": 0.5,
-                "voice_features": {
-                    "pitch": "medium",
-                    "pace": "moderate", 
-                    "energy": "moderate",
-                    "clarity": "good"
+            Provide your analysis in the following JSON format:
+            {
+                "primary_emotion": "the main emotion detected (e.g., happy, sad, angry, fearful, surprised, neutral, calm, confident, nervous, excited, frustrated)",
+                "confidence": a number between 0 and 1 indicating confidence,
+                "voice_characteristics": {
+                    "pitch": "high, medium, or low",
+                    "pace": "fast, moderate, or slow",
+                    "energy": "high, moderate, or low",
+                    "clarity": "excellent, good, fair, or poor"
                 },
-                "analysis": "Analysis is still processing..."
-            })
+                "explanation": "brief explanation of the detected emotion and vocal patterns"
+            }
+            
+            Focus on vocal prosody, tone, pitch, pace, and energy levels to determine the emotion.
+            If no clear speech is detected, return neutral emotion with low confidence."""
+            
+            # Generate content with timeout
+            response = model.generate_content(
+                [prompt, audio_part],
+                request_options={'timeout': 30}
+            )
+            
+            # Parse the response
+            response_text = response.text.strip()
+            logging.info(f"Gemini response: {response_text}")
+            
+            # Try to extract JSON from the response
+            # Gemini might wrap JSON in markdown code blocks
+            if '```json' in response_text:
+                json_start = response_text.find('```json') + 7
+                json_end = response_text.find('```', json_start)
+                response_text = response_text[json_start:json_end].strip()
+            elif '```' in response_text:
+                json_start = response_text.find('```') + 3
+                json_end = response_text.find('```', json_start)
+                response_text = response_text[json_start:json_end].strip()
+            
+            try:
+                analysis = json.loads(response_text)
+            except json.JSONDecodeError:
+                logging.warning(f"Could not parse JSON, using default result")
+                return jsonify(default_result)
+            
+            # Extract emotion and map it
+            primary_emotion = analysis.get('primary_emotion', 'neutral').lower()
+            mapped_emotion = emotion_map.get(primary_emotion, 'neutral')
+            
+            confidence = float(analysis.get('confidence', 0.5))
+            voice_chars = analysis.get('voice_characteristics', {})
+            explanation = analysis.get('explanation', 'Emotion detected from voice analysis')
+            
+            result = {
+                "emotion": mapped_emotion,
+                "confidence": min(max(confidence, 0.0), 1.0),
+                "voice_features": {
+                    "pitch": voice_chars.get('pitch', 'medium'),
+                    "pace": voice_chars.get('pace', 'moderate'),
+                    "energy": voice_chars.get('energy', 'moderate'),
+                    "clarity": voice_chars.get('clarity', 'good')
+                },
+                "analysis": explanation
+            }
+            
+            # Store in session
+            if session_id not in active_sessions:
+                active_sessions[session_id] = {'results': [], 'last_active': datetime.now()}
+            
+            active_sessions[session_id]['last_active'] = datetime.now()
+            active_sessions[session_id]['results'].append(result)
+            
+            if len(active_sessions[session_id]['results']) > 5:
+                active_sessions[session_id]['results'].pop(0)
+            
+            logging.info(f"Emotion detected: {mapped_emotion} ({confidence:.2f})")
+            return jsonify(result)
                 
         except Exception as api_error:
-            logging.error(f"Hume API processing error: {api_error}")
-            return jsonify({
-                "emotion": "neutral",
-                "confidence": 0.5,
-                "voice_features": {
-                    "pitch": "medium",
-                    "pace": "moderate",
-                    "energy": "moderate",
-                    "clarity": "good"
-                },
-                "analysis": f"Error: {str(api_error)}"
-            })
+            logging.error(f"Gemini API processing error: {api_error}")
+            default_result["analysis"] = f"Error: {str(api_error)}"
+            return jsonify(default_result)
         
     except Exception as e:
         logging.error(f"Error analyzing emotion: {e}")
@@ -310,7 +201,7 @@ def analyze_chunk():
             "error": "Server Error",
             "message": str(e)
         }), 500
-
+    
 @app.route('/api/end-session', methods=['POST'])
 def end_session():
     try:
@@ -337,14 +228,16 @@ def cleanup_expired_sessions():
         del active_sessions[session_id]
         logging.info(f"Expired session removed: {session_id}")
 
+# Start the background scheduler for session cleanup
+scheduler = BackgroundScheduler()
+scheduler.add_job(cleanup_expired_sessions, 'interval', minutes=15)
+scheduler.start()
+
 if __name__ == '__main__':
-    if not HUME_API_KEY:
-        logging.warning("HUME_API_KEY not configured! Get one from platform.hume.ai")
+    if not GEMINI_API_KEY:
+        logging.warning("GEMINI_API_KEY not configured! Get one from https://aistudio.google.com/app/apikey")
     
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(cleanup_expired_sessions, "interval", minutes=15)
-    scheduler.start()
     try:
-        app.run(debug=True, host="0.0.0.0", port=5000)
-    finally:
+        app.run(host='0.0.0.0', port=5000, debug=True)
+    except (KeyboardInterrupt, SystemExit):
         scheduler.shutdown()
