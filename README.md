@@ -3,7 +3,7 @@ This is a real-time voice emotion analysis that provides live feedback to help u
 
 ## How it works
 * Recording starts
-* Every 2 seconds chunk is captured
+* Every 30 seconds chunk is captured
 * API analyzes it
 * Updates UI with feedback
 * Continue recording (loop)
